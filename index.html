@@ -62,9 +62,27 @@
 
     </div>
     
-    <div class="relative border-b border-slate-200 bg-white">
-      <div class="max-w-6xl mx-auto flex overflow-x-auto no-scrollbar py-2 px-2 gap-2" id="nav-container"></div>
-      <div class="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-white to-transparent pointer-events-none md:hidden"></div>
+    <div class="border-b border-slate-200 bg-white">
+      <div class="max-w-6xl mx-auto px-2 pt-2">
+        <div class="relative">
+          <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-lg pointer-events-none">search</span>
+          <input id="topic-search" type="search" autocomplete="off"
+            placeholder="Thema suchen, z. B. Present Perfect, Gerund, Passiv …"
+            class="w-full pl-10 pr-3 py-2 rounded-full border-2 border-slate-200 text-sm focus:outline-none focus:border-blue-500">
+        </div>
+        <p id="topic-search-empty" class="hidden text-xs text-slate-500 px-3 pt-2">Kein Thema gefunden. Versuch ein anderes Wort.</p>
+      </div>
+      <div class="max-w-6xl mx-auto flex items-center gap-1 px-1">
+        <button id="nav-left" type="button" aria-label="Weitere Themen links"
+          class="flex-shrink-0 w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition disabled:opacity-30 disabled:cursor-default">
+          <span class="material-symbols-outlined">chevron_left</span>
+        </button>
+        <div class="flex-1 min-w-0 flex overflow-x-auto no-scrollbar py-2 px-1 gap-2 scroll-smooth" id="nav-container"></div>
+        <button id="nav-right" type="button" aria-label="Weitere Themen rechts"
+          class="flex-shrink-0 w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition disabled:opacity-30 disabled:cursor-default">
+          <span class="material-symbols-outlined">chevron_right</span>
+        </button>
+      </div>
     </div>
   </header>
   <main class="flex-grow overflow-y-auto p-4 relative" id="main-content"></main>
@@ -1309,9 +1327,92 @@
 
     window.onload = init;
 
+    // ---- Themensuche & Pfeile in der Themenleiste ----
+    const topicSearch = document.getElementById("topic-search");
+    const topicSearchEmpty = document.getElementById("topic-search-empty");
+    const navLeft = document.getElementById("nav-left");
+    const navRight = document.getElementById("nav-right");
+    let topicQuery = "";
+
+    // Zusätzliche Suchwörter (auch deutsch), damit Schüler das Thema leicht finden
+    const topicAliases = {
+      "simple-present": "einfache gegenwart präsens gegenwart signalwörter",
+      "simple-past": "einfache vergangenheit präteritum vergangenheit past tense unregelmäßige verben irregular verbs",
+      "present-progressive": "verlaufsform gegenwart present continuous ing-form",
+      "past-progressive": "verlaufsform vergangenheit past continuous",
+      "will-future": "zukunft futur will",
+      "going-to-future": "zukunft futur going to pläne",
+      "present-perfect": "perfekt have has 3. form signalwörter since for just already yet ever never",
+      "past-perfect": "plusquamperfekt vorvergangenheit had",
+      "if-clauses": "if-sätze bedingungssätze conditional typ 1 typ 2 typ 3",
+      "comparatives": "steigerung vergleiche komparativ superlativ adjektive",
+      "questions": "fragen fragebildung questions question words fragewörter",
+      "modals": "modalverben can must should may hilfsverben ersatzformen",
+      "much-many": "much many a lot of mengen",
+      "word-order": "satzbau satzstellung word order",
+      "reported-speech": "indirekte rede reported speech",
+      "relative-clauses": "relativsätze who which that whose where",
+      "passive-voice": "passiv passive",
+      "gerund-infinitive": "gerund gerundium ing-form -ing infinitiv infinitive to",
+      "some-any": "some any",
+      "adverbs": "adjektiv adverb adjektive adverbien ly"
+    };
+
+    function normalize(s) {
+      return (s || "").toLowerCase().replace(/[.\-\/]/g, " ").replace(/\s+/g, " ").trim();
+    }
+
+    function topicMatches(topic) {
+      if (!topicQuery) return true;
+      const hay = normalize(topic.name + " " + topic.id + " " + (topicAliases[topic.id] || ""));
+      return normalize(topicQuery).split(" ").every(w => hay.includes(w));
+    }
+
+    function updateNavArrows() {
+      const max = navContainer.scrollWidth - navContainer.clientWidth;
+      navLeft.disabled = navContainer.scrollLeft <= 2;
+      navRight.disabled = navContainer.scrollLeft >= max - 2;
+    }
+
+    navLeft.addEventListener("click", () => navContainer.scrollBy({ left: -navContainer.clientWidth * 0.7, behavior: "smooth" }));
+    navRight.addEventListener("click", () => navContainer.scrollBy({ left: navContainer.clientWidth * 0.7, behavior: "smooth" }));
+    navContainer.addEventListener("scroll", updateNavArrows, { passive: true });
+    window.addEventListener("resize", updateNavArrows);
+    // Mausrad scrollt die Leiste seitlich (am PC)
+    navContainer.addEventListener("wheel", e => {
+      if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+        navContainer.scrollLeft += e.deltaY;
+        e.preventDefault();
+      }
+    }, { passive: false });
+
+    topicSearch.addEventListener("input", () => {
+      topicQuery = topicSearch.value;
+      renderNav();
+      navContainer.scrollLeft = 0;
+      updateNavArrows();
+    });
+    // Enter öffnet das erste Treffer-Thema
+    topicSearch.addEventListener("keydown", e => {
+      if (e.key !== "Enter") return;
+      const first = appData.findIndex(topicMatches);
+      if (first >= 0) {
+        currentTenseIndex = first;
+        currentMode = "learn";
+        currentQuestions = [];
+        currentPracticeFilter = "all";
+        renderNav();
+        renderContent();
+        topicSearch.blur();
+      }
+    });
+
     function renderNav() {
       navContainer.innerHTML = "";
+      let shown = 0;
       appData.forEach((topic, index) => {
+        if (!topicMatches(topic)) return;
+        shown++;
         const isActive = index === currentTenseIndex;
         const btn = document.createElement("button");
         btn.className =
@@ -1328,8 +1429,19 @@
           renderNav();
           renderContent();
         };
+        if (isActive) btn.dataset.active = "1";
         navContainer.appendChild(btn);
       });
+      topicSearchEmpty.classList.toggle("hidden", shown > 0);
+      const active = navContainer.querySelector('[data-active="1"]');
+      if (active) {
+        const left = active.getBoundingClientRect().left - navContainer.getBoundingClientRect().left + navContainer.scrollLeft;
+        const right = left + active.offsetWidth;
+        if (left < navContainer.scrollLeft || right > navContainer.scrollLeft + navContainer.clientWidth) {
+          navContainer.scrollLeft = Math.max(0, left - 40);
+        }
+      }
+      requestAnimationFrame(updateNavArrows);
     }
 
     function updateFilterBarUI() {
@@ -1599,6 +1711,8 @@ function renderContent() {
     }
 
     function softReset() {
+      topicQuery = "";
+      topicSearch.value = "";
       currentTenseIndex = 0;
       currentMode = "learn";
       currentQuestions = [];
